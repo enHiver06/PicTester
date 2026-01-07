@@ -19,7 +19,7 @@ pip install -r requirements.txt
 
 2. 启动服务：
 ```bash
-uvicorn api.index:app --reload --port 8000
+uvicorn index:app --reload --port 8000
 ```
 
 3. 访问API文档：
