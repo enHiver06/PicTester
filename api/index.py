@@ -1,24 +1,10 @@
-from fastapi import FastAPI, File, UploadFile, Form, HTTPException
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 from PIL import Image
 import io
-from typing import Literal
 
-app = FastAPI(
-    title="图片检测API",
-    description="检测图片格式、尺寸和透明度是否符合要求",
-    version="1.0.0"
-)
-
-# 配置CORS，允许Dify等外部服务访问
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = Flask(__name__)
+CORS(app)  # 允许跨域访问
 
 # 检测规则配置
 RULES = {
@@ -35,7 +21,7 @@ RULES = {
 }
 
 
-def check_image_transparency(img: Image.Image) -> tuple[bool, int]:
+def check_image_transparency(img):
     """
     检查图片是否有足够的完全透明像素（alpha=0）
     要求：完全透明像素比例 > 0.1%
@@ -74,7 +60,7 @@ def check_image_transparency(img: Image.Image) -> tuple[bool, int]:
         return False, 0
 
 
-def check_image(img_data: bytes, image_type: str) -> dict:
+def check_image(img_data, image_type):
     """
     检查图片是否符合要求
     返回: 检测结果字典
@@ -142,29 +128,26 @@ def check_image(img_data: bytes, image_type: str) -> dict:
         }
 
 
-@app.get("/")
-async def root():
+@app.route('/')
+def root():
     """API根路径，返回欢迎信息"""
-    return {
+    return jsonify({
         "message": "图片检测API",
         "version": "1.0.0",
         "endpoints": {
             "POST /check-image": "检测单张图片",
-            "GET /docs": "查看API文档"
+            "GET /": "查看API信息"
         }
-    }
+    })
 
 
-@app.post("/check-image")
-async def check_image_endpoint(
-    image: UploadFile = File(..., description="要检测的图片文件"),
-    image_type: Literal["生活照", "证件照"] = Form(..., description="图片类型")
-):
+@app.route('/check-image', methods=['POST'])
+def check_image_endpoint():
     """
     检测单张图片是否符合要求
 
     参数:
-    - image: 图片文件（支持PNG、JPG等格式）
+    - image: 图片文件（multipart/form-data）
     - image_type: 图片类型，可选值：生活照、证件照
 
     返回:
@@ -174,17 +157,56 @@ async def check_image_endpoint(
     - image_info: 图片信息
     """
     try:
-        # 读取上传的图片数据
-        img_data = await image.read()
+        # 检查是否有文件上传
+        if 'image' not in request.files:
+            return jsonify({
+                "success": False,
+                "message": "缺少图片文件",
+                "errors": ["请上传名为'image'的文件"]
+            }), 400
 
-        # 检查文件是否为空
+        # 检查是否有图片类型参数
+        image_type = request.form.get('image_type')
+        if not image_type:
+            return jsonify({
+                "success": False,
+                "message": "缺少图片类型参数",
+                "errors": ["请提供'image_type'参数，可选值：生活照、证件照"]
+            }), 400
+
+        # 读取上传的图片
+        file = request.files['image']
+        if file.filename == '':
+            return jsonify({
+                "success": False,
+                "message": "未选择文件",
+                "errors": ["请选择要上传的图片文件"]
+            }), 400
+
+        # 读取图片数据
+        img_data = file.read()
         if not img_data:
-            raise HTTPException(status_code=400, detail="上传的文件为空")
+            return jsonify({
+                "success": False,
+                "message": "上传的文件为空",
+                "errors": ["文件内容为空"]
+            }), 400
 
         # 执行检测
         result = check_image(img_data, image_type)
 
-        return JSONResponse(content=result)
+        # 根据检测结果返回适当的状态码
+        status_code = 200 if result["success"] else 400
+        return jsonify(result), status_code
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"服务器错误: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": "服务器错误",
+            "errors": [f"错误详情: {str(e)}"]
+        }), 500
+
+
+# Vercel 需要这个
+if __name__ == '__main__':
+    app.run(debug=True)
