@@ -4,7 +4,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 import io
 from typing import Literal
-from mangum import Mangum
 
 app = FastAPI(
     title="图片检测API",
@@ -189,6 +188,3 @@ async def check_image_endpoint(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"服务器错误: {str(e)}")
-
-# Vercel需要这个handler - 使用Mangum适配器
-handler = Mangum(app)
